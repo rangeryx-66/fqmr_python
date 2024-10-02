@@ -4,6 +4,8 @@ import openmesh as om
 import numpy
 import math
 import random
+
+import trimesh
 from scipy import constants
 from fast_qem_class import *
 
@@ -485,15 +487,58 @@ class MeshSimplifier:
                         uv += 3
                     else:
                         file.write(f"f {triangle.v[0] + 1} {triangle.v[1] + 1} {triangle.v[2] + 1}\n")
+    def write_obj2(self):
+        mesh=om.TriMesh()
+        vhs=[]
+        for vertex in self.vertices:
+            vh1 = mesh.add_vertex((vertex.p.x, vertex.p.y, vertex.p.z))
+            vhs.append(vh1)
+        for triangle in self.triangles:
+            fh = mesh.add_face(vhs[triangle.v[0]], vhs[triangle.v[1]], vhs[triangle.v[2]])
+        return mesh
+    def write_obj3(self):
+        vertices=[]
+        triangles=[]
+        for i in range(len(self.vertices)):
+            vertex=[self.vertices[i].p.x,self.vertices[i].p.y,self.vertices[i].p.z]
+            vertices.append(vertex)
+        for i in range(len(self.triangles)):
+            triangle=[self.triangles[i].v[0],self.triangles[i].v[1],self.triangles[i].v[2]]
+            triangles.append(triangle)
+        mesh = trimesh.Trimesh(vertices=vertices, faces=triangles)
+        return mesh
+    def convertrimeshToFqmr(self, mesh):
+        # 清空现有的顶点和三角形列表
+        self.vertices.clear()
+        self.triangles.clear()
+
+        # 遍历trimesh的顶点和面，转换为自定义格式
+        for vertex in mesh.vertices:
+            # 假设mesh.vertices返回的是numpy数组
+            p=Vec3f(vertex[0], vertex[1], vertex[2])
+            self.vertices.append(Vertex(p))
+
+        for face in mesh.faces:
+            # 假设mesh.faces返回的是顶点索引的列表
+            t = Triangle()
+            t.v[0] = face[0]
+            t.v[1] = face[1]
+            t.v[2] = face[2]
+            self.triangles.append(t)
 
 
-
+mesh = trimesh.load('input.obj')
+if isinstance(mesh, trimesh.Scene):
+    # 提取其中的第一个 mesh
+    mesh1 = mesh.dump(concatenate=True)
+else:
+    mesh1 = mesh
 mesh=MeshSimplifier()
-mesh.load_obj("input.obj",process_uv=False)
-# for i in range(len(mesh.triangles)):
-#     print(mesh.triangles[i].material)
-# for i in range(len(mesh.triangles)):
-#     print(mesh.triangles[i].v[0]," ",mesh.triangles[i].v[1]," ",mesh.triangles[i].v[2])
-mesh.simplify_mesh(1400,5, 8,False, 100, 0.000000001,3, False, 0.0001,True)
-# mesh.simplify_mesh(1400)
-mesh.write_obj("output.obj")
+mesh.convertrimeshToFqmr(mesh1)
+# mesh.load_obj("input.obj",process_uv=False)
+
+mesh.simplify_mesh(10,5, 8,False, 100, 0.000000001,3, False, 0.0001,True)
+
+trimesh_mesh=mesh.write_obj3()
+trimesh_mesh.export('output115.obj')
+
