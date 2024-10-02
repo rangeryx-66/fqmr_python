@@ -56,7 +56,7 @@ class MeshSimplifier:
         # K = abs(K2 + K1)
         xishu = 1 #- math.exp(-3 * K)
         q = self.vertices[id_v1].q + self.vertices[id_v2].q
-        border = self.vertices[id_v1] and self.vertices[id_v2]
+        border = self.vertices[id_v1].border and self.vertices[id_v2].border
         error = 0
         det = q.det(0, 1, 2, 1, 4, 5, 2, 5, 7)
         if det != 0 and not border:
@@ -151,7 +151,7 @@ class MeshSimplifier:
                 if not self.triangles[i].deleted:
                     self.triangles[dst] = self.triangles[i]
                     dst = dst + 1
-            self.triangles = [Triangle()]*dst
+            self.triangles = self.triangles[:dst]
         for i in range(len(self.vertices)):
             self.vertices[i].tstart = 0
             self.vertices[i].tcount = 0
@@ -262,34 +262,34 @@ class MeshSimplifier:
         self.vertices = self.vertices[:dst]
         return
 
-    def crossProductMagnitude(self, A, B, C):
-        ABx = B.x - A.x
-        ABy = B.y - A.y
-        ABz = B.z - A.z
-        ACx = C.x - A.x
-        ACy = C.y - A.y
-        ACz = C.z - A.z
-        crossX = ABy * ACz - ABz * ACy
-        crossY = ABz * ACx - ABx * ACz
-        crossZ = ABx * ACy - ABy * ACx
-        return math.sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ)
-
-    def angleBetweenVectors(self, A, B, C):
-        ABx = B.x - A.x
-        ABy = B.y - A.y
-        ABz = B.z - A.z
-        ACx = C.x - A.x
-        ACy = C.y - A.y
-        ACz = C.z - A.z
-        dotProduct = ABx * ACx + ABy * ACy + ABz * ACz
-        ABmag = math.sqrt(ABx * ABx + ABy * ABy + ABz * ABz)
-        ACmag = math.sqrt(ACx * ACx + ACy * ACy + ACz * ACz)
-        angleRAdians = math.acos(dotProduct / (ABmag * ACmag))
-        return angleRAdians
+    # def crossProductMagnitude(self, A, B, C):
+    #     ABx = B.x - A.x
+    #     ABy = B.y - A.y
+    #     ABz = B.z - A.z
+    #     ACx = C.x - A.x
+    #     ACy = C.y - A.y
+    #     ACz = C.z - A.z
+    #     crossX = ABy * ACz - ABz * ACy
+    #     crossY = ABz * ACx - ABx * ACz
+    #     crossZ = ABx * ACy - ABy * ACx
+    #     return math.sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ)
+    #
+    # def angleBetweenVectors(self, A, B, C):
+    #     ABx = B.x - A.x
+    #     ABy = B.y - A.y
+    #     ABz = B.z - A.z
+    #     ACx = C.x - A.x
+    #     ACy = C.y - A.y
+    #     ACz = C.z - A.z
+    #     dotProduct = ABx * ACx + ABy * ACy + ABz * ACz
+    #     ABmag = math.sqrt(ABx * ABx + ABy * ABy + ABz * ABz)
+    #     ACmag = math.sqrt(ACx * ACx + ACy * ACy + ACz * ACz)
+    #     angleRAdians = math.acos(dotProduct / (ABmag * ACmag))
+    #     return angleRAdians
 
     def simplify_mesh(self, target_count, update_rate=5, agressiveness=7, verbose=True, max_iterations=100, alpha=1e-9,
                       K=3,
-                      lossless=True, threshold_lossless=1e-4, preserve_border=False):
+                      lossless=False, threshold_lossless=1e-4, preserve_border=False):
         face_start = len(self.triangles)
         for i in range(len(self.triangles)):
             self.triangles[i].deleted = 0
@@ -344,11 +344,10 @@ class MeshSimplifier:
                         v0.p = p
                         v0.q = v0.q + v1.q
                         tstart = len(self.refs)
+
                         self.update_triangles(i0, v0, deleted0, deleted_triangles)
 
                         self.update_triangles(i0, v1, deleted1, deleted_triangles)
-
-
 
                         self.collapses.append([i0, i1])
                         tcount = len(self.refs) - tstart
@@ -359,6 +358,7 @@ class MeshSimplifier:
                             v0.tstart = tstart
                         v0.tcount = tcount
                         break
+
                 if lossless and deleted_triangles[0] <= 0:
                     break
                 elif not lossless and triangle_count - deleted_triangles[0] <= target_count:
@@ -424,6 +424,7 @@ class MeshSimplifier:
                             print("wrong format")
                             return
                         if tri_ok:
+
                             t = Triangle()
                             t.v[0] = intergers[0] - 1 - vertex_cnt
                             t.v[1] = intergers[3] - 1 - vertex_cnt
@@ -437,6 +438,7 @@ class MeshSimplifier:
                                 uvmap.append(indices)
                                 t.attr = t.attr | Attributes.TEXCOORD.value
                             t.material = material
+
                             self.triangles.append(t)
         except FileNotFoundError:
             print(f"File {filename} not found!")
@@ -446,22 +448,52 @@ class MeshSimplifier:
                     self.triangles[i].uvs[j] = uvs[uvmap[i][j]]
         return
 
-    def write_obj(self):
-        mesh=om.TriMesh()
-        vhs=[]
-        for vertex in self.vertices:
-            vh1 = mesh.add_vertex((vertex.p.x, vertex.p.y, vertex.p.z))
-            vhs.append(vh1)
-        for triangle in self.triangles:
-            fh = mesh.add_face(vhs[triangle.v[0]], vhs[triangle.v[1]], vhs[triangle.v[2]])
-        return mesh
+    def write_obj(self,filename='output.obj'):
+        with open(filename, 'w') as file:
+            cur_material = -1
+            has_uv = (len(self.triangles) and (self.triangles[0].attr & Attributes.TEXCOORD.value) == Attributes.TEXCOORD.value)
+
+            if not file:
+                print(f"write_obj: can't write data file \"{filename}\".")
+                exit(0)
+
+            if self.mtllib:
+                file.write(f"mtllib {self.mtllib}\n")
+
+            for i, vertex in enumerate(self.vertices):
+                # More compact: remove trailing zeros
+                file.write(f"v {vertex.p.x:g} {vertex.p.y:g} {vertex.p.z:g}\n")
+
+            if has_uv:
+                for triangle in self.triangles:
+                    if not triangle.deleted:
+                        for uv in triangle.uvs:
+                            file.write(f"vt {uv.x:g} {uv.y:g}\n")
+
+            uv = 1
+            for triangle in self.triangles:
+
+                if not triangle.deleted:
+                    if triangle.material != cur_material:
+                        cur_material = triangle.material
+
+                        file.write(f"usemtl {self.materials[triangle.material]}\n")
+
+                    if has_uv:
+                        file.write(
+                            f"f {triangle.v[0] + 1}/{uv} {triangle.v[1] + 1}/{uv + 1} {triangle.v[2] + 1}/{uv + 2}\n")
+                        uv += 3
+                    else:
+                        file.write(f"f {triangle.v[0] + 1} {triangle.v[1] + 1} {triangle.v[2] + 1}\n")
 
 
 
 mesh=MeshSimplifier()
 mesh.load_obj("input.obj",process_uv=False)
-for i in range(len(mesh.triangles)):
-    print(mesh.triangles[i].v[0]," ",mesh.triangles[i].v[1]," ",mesh.triangles[i].v[2])
-mesh.simplify_mesh(1400)
-ommesh=mesh.write_obj()
-om.write_mesh("output.obj",ommesh)
+# for i in range(len(mesh.triangles)):
+#     print(mesh.triangles[i].material)
+# for i in range(len(mesh.triangles)):
+#     print(mesh.triangles[i].v[0]," ",mesh.triangles[i].v[1]," ",mesh.triangles[i].v[2])
+mesh.simplify_mesh(1400,5, 8,False, 100, 0.000000001,3, False, 0.0001,True)
+# mesh.simplify_mesh(1400)
+mesh.write_obj("output.obj")
