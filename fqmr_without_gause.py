@@ -21,39 +21,40 @@ class MeshSimplifier:
             q[6] * y + q[7] * z * z + 2 * q[8] * z + q[9]
 
     def calculate_error(self, id_v1, id_v2, p_result):
-        v1 = self.vertices[id_v1]
-        v2 = self.vertices[id_v2]
-        K1 = 0.
-        K2 = 0.
-        S1 = 0.
-        S2 = 0.
-        D1 = 0.
-        D2 = 0.
-        for k in range(v1.tcount):
-            r = self.refs[v1.tstart + k]
-            t = self.triangles[r.tid]
-            near1 = t.v[(r.tvertex + 1) % 3]
-            near2 = t.v[(r.tvertex + 2) % 3]
-            near1V = self.vertices[near1]
-            near2V = self.vertices[near2]
-            # print(near1V.p.x)
-            # print(near2V.p.y)
-            D1 = D1 + self.angleBetweenVectors(v1.p, near1V.p, near2V.p)
-            S1 = S1 + self.crossProductMagnitude(v1.p, near1V.p, near2V.p)
-
-        K1 = 3 * (2 * 3.14159265358979323846 - D1) / S1
-        for k in range(v2.tcount):
-            r = self.refs[v2.tstart + k]
-            t = self.triangles[r.tid]
-            near1 = t.v[(r.tvertex + 1) % 3]
-            near2 = t.v[(r.tvertex + 2) % 3]
-            near1V = self.vertices[near1]
-            near2V = self.vertices[near2]
-            D2 = D2 + self.angleBetweenVectors(v2.p, near1V.p, near2V.p)
-            S2 = S2 + self.crossProductMagnitude(v2.p, near1V.p, near2V.p)
-        K2 = 3 * (2 * 3.14159265358979323846 - D2) / S2
-        K = abs(K2 + K1)
-        xishu = 1 - math.exp(-1 * K)
+        # v1 = self.vertices[id_v1]
+        # v2 = self.vertices[id_v2]
+        # K1 = 0.
+        # K2 = 0.
+        # S1 = 0.
+        # S2 = 0.
+        # D1 = 0.
+        # D2 = 0.
+        # for k in range(v1.tcount):
+        #     r = self.refs[v1.tstart + k]
+        #     t = self.triangles[r.tid]
+        #     near1 = t.v[(r.tvertex + 1) % 3]
+        #     near2 = t.v[(r.tvertex + 2) % 3]
+        #     near1V = self.vertices[near1]
+        #     near2V = self.vertices[near2]
+        #     # print(near1V.p.x)
+        #     # print(near2V.p.y)
+        #     D1 = D1 + self.angleBetweenVectors(v1.p, near1V.p, near2V.p)
+        #     S1 = S1 + self.crossProductMagnitude(v1.p, near1V.p, near2V.p)
+        #
+        # K1 = 3 * (2 * 3.14159265358979323846 - D1) / S1
+        # for k in range(v2.tcount):
+        #     r = self.refs[v2.tstart + k]
+        #     t = self.triangles[r.tid]
+        #     near1 = t.v[(r.tvertex + 1) % 3]
+        #     near2 = t.v[(r.tvertex + 2) % 3]
+        #     near1V = self.vertices[near1]
+        #     near2V = self.vertices[near2]
+        #     D2 = D2 + self.angleBetweenVectors(v2.p, near1V.p, near2V.p)
+        #     S2 = S2 + self.crossProductMagnitude(v2.p, near1V.p, near2V.p)
+        # K2 = 3 * (2 * 3.14159265358979323846 - D2) / S2
+        # K = abs(K2 + K1)
+        # xishu = 1 - math.exp(-1 * K)
+        xishu=1
         q = self.vertices[id_v1].q + self.vertices[id_v2].q
         border = self.vertices[id_v1].border and self.vertices[id_v2].border
         error = 0
@@ -373,7 +374,7 @@ class MeshSimplifier:
 
         self.compact_mesh()
         face_end = len(self.triangles)
-        # print("from {} to {}".format(face_start, face_end))
+        print("from {} to {}".format(face_start, face_end))
         return
 
     def trimwhitespace(self, str):
@@ -557,8 +558,8 @@ def simplify_mesh_gause(trimesh_mesh,target_face_count=300):
 
     return trimesh_mesh
 
-mesh = trimesh.load('input.obj', force='mesh')
-mesh=simplify_mesh_gause(mesh,400)
-mesh.export('outputtest.obj')
+# mesh = trimesh.load('input.obj', force='mesh')
+# mesh=simplify_mesh_gause(mesh,1000)
+# mesh.export('outputtest.obj')
 
 

@@ -46,10 +46,10 @@ class Vec3f:
         return Vec3f(self.x + other.x, self.y + other.y, self.z + other.z)
 
     def __iadd__(self, other):
-        self.x += other.x
-        self.y += other.y
-        self.z += other.z
-        return self
+        if isinstance(other, Vec3f):
+            return Vec3f(self.x + other.x, self.y + other.y, self.z + other.z)
+        else:
+            return Vec3f(self.x + other, self.y + other, self.z + other)
 
     def __mul__(self, other):
         if isinstance(other, Vec3f):

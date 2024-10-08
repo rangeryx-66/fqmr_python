@@ -3,13 +3,22 @@ import numpy as np
 import trimesh as tr
 import pyfqmr
 import open3d as o3d
-import openmesh as om
+from fqmr_without_gause import simplify_mesh_gause
 min_num=2000
 def load_mesh(filename):
     mesh = o3d.io.read_triangle_mesh(filename)
     return mesh
 
+def convert_trimesh_to_open3d(trimesh_obj):
+    # 提取顶点和面
+    vertices = trimesh_obj.vertices
+    faces = trimesh_obj.faces
 
+    # 创建Open3D的TriangleMesh
+    open3d_mesh = o3d.geometry.TriangleMesh()
+    open3d_mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    open3d_mesh.triangles = o3d.utility.Vector3iVector(faces)
+    return open3d_mesh
 def mesh_to_point_cloud(mesh, num_points=10000):
     if len(mesh.vertices) > 0:
         pcd = mesh.sample_points_uniformly(number_of_points=num_points)
@@ -39,9 +48,9 @@ def compute_simplification_ratio(original_mesh, simplified_mesh):
     return reduction_ratio + 0.1
 
 
-def compute_loss(original_file, simplified_file, weight_similarity=0.5, weight_reduction=0.5):
-    original_mesh = load_mesh(original_file)
-    simplified_mesh = load_mesh(simplified_file)
+def compute_loss(mesh0, mesh1, weight_similarity=0.8, weight_reduction=0.2):
+    original_mesh = convert_trimesh_to_open3d(mesh0)
+    simplified_mesh = convert_trimesh_to_open3d(mesh1)
 
     original_pcd = mesh_to_point_cloud(original_mesh)
     simplified_pcd = mesh_to_point_cloud(simplified_mesh)
@@ -143,26 +152,25 @@ def simplify(nums, mesh1):
     return simplified_mesh
 
 def calculate_similarity(X, mesh):
-    mesh_copy = mesh
+
 
     sequence = X.astype(int)
     for i in range(len(X)):
         if i % 2 == 0:
-            mesh_copy = split(mesh_copy, sequence[i])
+            mesh = split(mesh, sequence[i])
         else:
-            mesh_copy = simplify(len(mesh_copy.faces)-sequence[i], mesh_copy)
+            mesh = simplify(len(mesh.faces)-sequence[i], mesh)
 
-    if 200<=len(mesh_copy.faces)<=300:
-        min_num=len(mesh_copy.faces)
+    if 200<=len(mesh.faces)<=300:
+        min_num=len(mesh.faces)
         print('minnum:',min_num)
-        mesh_copy.export('output_200.obj')
-    if 100<=len(mesh_copy.faces)<=200:
-        min_num=len(mesh_copy.faces)
+        mesh.export('output_200.obj')
+    if 100<=len(mesh.faces)<=200:
+        min_num=len(mesh.faces)
         print('minnum:',min_num)
-        mesh_copy.export('output_100.obj')
-    mesh.export('output_temps1.obj')
-    mesh_copy.export('output_temps2.obj')
-    return compute_loss('output_temps1.obj','output_temps2.obj')
+        mesh.export('output_100.obj')
+    mesh_copy=tr.load('input.obj', force='mesh')
+    return compute_loss(mesh,mesh_copy)
 def tuili(X,mesh,t):
     mesh_copy = mesh
 
@@ -170,8 +178,9 @@ def tuili(X,mesh,t):
     for i in range(len(X)):
         if i % 2 == 0:
             mesh_copy = split(mesh_copy, sequence[i])
+
         else:
-            mesh_copy = simplify(len(mesh_copy.faces) - sequence[i], mesh_copy)
+            mesh_copy = simplify_mesh_gause(mesh_copy, sequence[i])
     print(len(mesh_copy.faces))
     mesh_copy.export(f'output{t:02d}.obj')
 
@@ -260,7 +269,7 @@ class WOA_DE:
 
 
             self.agents = np.clip(self.agents, self.lb, self.upper_bounds)
-
+            print("best_agents",self.best_agent)
             tuili(self.best_agent, mesh, t)
 
         return self.best_agent, self.best_score
@@ -272,13 +281,13 @@ n_agents = 20
 max_iter = 50
 dim = 8
 lb = 0
-even_ub = 3
-odd_ub=500
+even_ub = 5
+odd_ub=400
 mut = 0.8
 crossp = 0.7
 mesh = tr.load('input.obj', force='mesh')
-loss=compute_loss('input.obj','input.obj')
-print("loss:",loss)
+# loss=compute_loss('input.obj','input.obj')
+# print("loss:",loss)
 woa_de = WOA_DE(n_agents, max_iter, dim, lb, even_ub,odd_ub, calculate_similarity, mut, crossp, mesh)
 best_agent, best_score = woa_de.optimize()
 print("最优解: ", best_agent)

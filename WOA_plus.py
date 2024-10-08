@@ -4,66 +4,23 @@ import trimesh as tr
 import pyfqmr
 import open3d as o3d
 import openmesh as om
+from fastqem import simplify_mesh_gause
 min_num=2000
-def update_face_to_centroid(mesh, face_handle):
-    # 获取面的所有半边
-    halfedges = list(mesh.fh(face_handle))
 
-    # 获取对应的顶点
-    vertices = [mesh.to_vertex_handle(heh) for heh in halfedges]
-
-    # 计算重心
-    points = np.array([mesh.point(vh) for vh in vertices])
-    centroid = points.mean(axis=0)
-
-    # 更新顶点到重心
-    for vh in vertices:
-        mesh.set_point(vh, centroid)
-
-
-def delete_center_face(mesh, face_handle):
-    halfedges = list(mesh.fh(face_handle))
-
-    vertices = [mesh.to_vertex_handle(heh) for heh in halfedges]
-
-    mesh.delete_face(face_handle, delete_isolated_vertices=False)
-
-    for vh in vertices:
-        if not mesh.is_boundary(vh) and mesh.valence(vh) == 0:
-            mesh.delete_vertex(vh, delete_isolated_vertices=False)
-
-    unique_vertices = np.unique(vertices)
-    for vh in unique_vertices:
-        adjacent_faces = list(mesh.vf(vh))  # 连接到该顶点的所有面
-        if len(adjacent_faces) == 0:
-            mesh.delete_vertex(vh, delete_isolated_vertices=False)
-    mesh.garbage_collection()
-
-
-
-
-
-def simplify_mesh(mesh, target_face_count):
-    num=mesh.n_faces()
-    while mesh.n_faces() > num-target_face_count:
-        min_area_face = None
-        min_area = float('inf')
-        for fh in mesh.faces():
-            points = [mesh.point(vh) for vh in mesh.fv(fh)]
-            area = np.linalg.norm(np.cross(points[1] - points[0], points[2] - points[0])) / 2
-            if area < min_area:
-                min_area = area
-                min_area_face = fh
-
-
-        update_face_to_centroid(mesh, min_area_face)
-        delete_center_face(mesh, min_area_face)
-    return mesh
 def load_mesh(filename):
     mesh = o3d.io.read_triangle_mesh(filename)
     return mesh
 
+def convert_trimesh_to_open3d(trimesh_obj):
+    # 提取顶点和面
+    vertices = trimesh_obj.vertices
+    faces = trimesh_obj.faces
 
+    # 创建Open3D的TriangleMesh
+    open3d_mesh = o3d.geometry.TriangleMesh()
+    open3d_mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    open3d_mesh.triangles = o3d.utility.Vector3iVector(faces)
+    return open3d_mesh
 def mesh_to_point_cloud(mesh, num_points=10000):
     if len(mesh.vertices) > 0:
         pcd = mesh.sample_points_uniformly(number_of_points=num_points)
@@ -93,9 +50,9 @@ def compute_simplification_ratio(original_mesh, simplified_mesh):
     return reduction_ratio + 0.1
 
 
-def compute_loss(original_file, simplified_file, weight_similarity=0.5, weight_reduction=0.5):
-    original_mesh = load_mesh(original_file)
-    simplified_mesh = load_mesh(simplified_file)
+def compute_loss(mesh0,mesh1, weight_similarity=0.8, weight_reduction=0.2):
+    original_mesh = convert_trimesh_to_open3d(mesh0)
+    simplified_mesh = convert_trimesh_to_open3d(mesh1)
 
     original_pcd = mesh_to_point_cloud(original_mesh)
     simplified_pcd = mesh_to_point_cloud(simplified_mesh)
@@ -197,43 +154,38 @@ def simplify(nums, mesh1):
     return simplified_mesh
 
 def calculate_similarity(X, mesh):
-    mesh_copy = mesh
-    mesh_copy.export('output_temps.obj')
+
     sequence = X.astype(int)
     for i in range(len(X)):
         if i % 3 == 0:
-            mesh_copy = tr.load('output_temps.obj', force='mesh')
-            mesh_copy = split(mesh_copy, sequence[i])
-            mesh_copy.export('output_temps.obj')
+            mesh = split(mesh, sequence[i])
         elif i % 3 == 1:
-            mesh_copy = om.read_trimesh(r"output_temps.obj")
-            mesh_copy = simplify_mesh(mesh_copy, sequence[i])
-            om.write_mesh('output_temps.obj', mesh_copy)
+            mesh = simplify_mesh_gause(mesh, sequence[i])
         else:
+            mesh = simplify(len(mesh.faces) - sequence[i], mesh)
 
-            mesh_copy = tr.load('output_temps.obj', force='mesh')
-            mesh_copy = simplify(len(mesh_copy.faces) - sequence[i], mesh_copy)
-            mesh_copy.export('output_temps.obj')
-    if 200<=len(mesh_copy.faces)<=300:
-        min_num=len(mesh_copy.faces)
+    if 200<=len(mesh.faces)<=300:
+        min_num=len(mesh.faces)
         print('minnum:',min_num)
-        mesh_copy.export('output_200.obj')
-    if 100<=len(mesh_copy.faces)<=200:
-        min_num=len(mesh_copy.faces)
+        mesh.export('output_200.obj')
+    if 100<=len(mesh.faces)<=200:
+        min_num=len(mesh.faces)
         print('minnum:',min_num)
-        mesh_copy.export('output_100.obj')
-    mesh.export('output_temps1.obj')
+    mesh_copy=tr.load('input.obj', force='mesh')
 
-    return compute_loss('output_temps1.obj','output_temps.obj')
+
+    return compute_loss(mesh,mesh_copy)
 def tuili(X,mesh,t):
     mesh_copy = mesh
 
     sequence = X.astype(int)
     for i in range(len(X)):
-        if i % 2 == 0:
+        if i % 3 == 0:
             mesh_copy = split(mesh_copy, sequence[i])
-        else:
+        elif i % 3 == 1:
             mesh_copy = simplify(len(mesh_copy.faces) - sequence[i], mesh_copy)
+        else:
+            mesh_copy = simplify_mesh_gause(mesh_copy, sequence[i])
     print(len(mesh_copy.faces))
     mesh_copy.export(f'output{t:02d}.obj')
 
@@ -267,19 +219,19 @@ class WOA_DE:
         self.three_ub=three_ub
         self.condition_three = (indices % 3 == 0)
         # 检查是否为偶数
-        self.condition_even = (indices % 2 == 0)
+        self.condition_two = (indices % 3 == 1)
         # 检查是否为奇数
-        self.condition_odd = (indices % 2 != 0)
+        self.condition_one = (indices % 3 == 2)
 
         # 使用np.where嵌套选择条件
         self.upper_bounds = np.where(self.condition_three, self.one_ub,
-                                np.where(self.condition_even, self.two_ub, self.three_ub))
+                                np.where(self.condition_two, self.two_ub, self.three_ub))
         self.agents = np.random.uniform(self.lb,self.upper_bounds,(n_agents, dim))
 
     def apply_bounds(self, agents):
         # 使用np.where嵌套选择条件
         upper_bounds = np.where(self.condition_three, self.one_ub,
-                                     np.where(self.condition_even, self.two_ub, self.three_ub))
+                                     np.where(self.condition_two, self.two_ub, self.three_ub))
         return np.clip(agents, self.lb, upper_bounds)
 
     def optimize(self):
@@ -324,9 +276,9 @@ class WOA_DE:
                     distance_to_best = abs(self.best_agent - self.agents[i])
                     trial = distance_to_best * np.exp(b * l) * np.cos(2 * np.pi * l) + self.best_agent
 
-                if is_feasible(trial, len(self.mesh.faces)) and self.obj_func(trial, self.mesh) < self.obj_func(self.agents[i], self.mesh):
+                if is_feasible(trial, len(self.mesh.faces)) and self.obj_func(trial, self.mesh) > self.obj_func(self.agents[i], self.mesh):
                     self.agents[i] = trial
-                    if self.obj_func(trial, self.mesh) < self.best_score:
+                    if self.obj_func(trial, self.mesh) > self.best_score:
                         self.best_score = self.obj_func(trial, self.mesh)
                         self.best_agent = trial
 
@@ -348,12 +300,12 @@ dim = 9  # 搜索空间维度
 lb = 0  # 下界
 one_ub = 3
 two_ub=500# 上界
-three_ub=200
+three_ub=500
 mut = 0.8
 crossp = 0.7
-mesh = tr.load('input.obj', force='mesh')
-loss=compute_loss('input.obj','input.obj')
-print("loss:",loss)
+mesh = tr.load('input (1).obj', force='mesh')
+# loss=compute_loss('input.obj','input.obj')
+# print("loss:",loss)
 #mesh = remove_duplicate_vertices(mesh)
 # 实例化WOA算法
 woa_de = WOA_DE(n_agents, max_iter, dim, lb, one_ub,two_ub,three_ub, calculate_similarity, mut, crossp, mesh)
