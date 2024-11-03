@@ -41,7 +41,7 @@ def obtuse_bisector_intersection(vertices):
     return intersection_point
 
 
-def split(mesh, min_allowed_angle):
+def split2(mesh, min_allowed_angle):
     if isinstance(mesh, tr.Scene):
 
         mesh1 = mesh.dump(concatenate=True)
@@ -53,24 +53,22 @@ def split(mesh, min_allowed_angle):
     for face in mesh1.faces:
         tri_vertices = mesh1.vertices[face]
         angles = getangles(tri_vertices)
-        print(f"Face: {face}, Angles: {angles}")
         if max(angles) > min_allowed_angle:
             index = obtuse_angle_index(tri_vertices)
-            print(f"Max Angle Index: {index}")
+
 
             i1, i2 = (index + 1) % 3, (index + 2) % 3
             new_point = obtuse_bisector_intersection(tri_vertices)
-            print(f"New Point: {new_point}")
+
 
 
             new_point_idx = len(mesh1.vertices)
             mesh1.vertices = np.vstack([mesh1.vertices, new_point])
-            print(f"New Point Index: {new_point_idx}")
+
 
             new_faces.append([face[i1], face[index], new_point_idx])
             new_faces.append([face[i2], face[index], new_point_idx])
-            print(
-                f"New Faces: {[face[i1], face[index], new_point_idx]}, {[face[i2], face[index], new_point_idx]}")
+
         else:
 
             new_faces.append(face)
@@ -82,6 +80,6 @@ def split(mesh, min_allowed_angle):
 # 示例调用
 # veritce=[np.array([0,0,0]),np.array([1.73,0,0]),np.array([0,1,0])]
 # print(obtuse_angle_index(veritce))
-mesh = tr.load("input.obj", force="mesh")
-mesh = split(mesh, 100)
-mesh.export("output.obj")
+# mesh = tr.load("input.obj", force="mesh")
+# mesh = split(mesh, 100)
+# mesh.export("output.obj")

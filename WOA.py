@@ -4,6 +4,7 @@ import trimesh as tr
 import pyfqmr
 import open3d as o3d
 from fqmr_without_gause import simplify_mesh_gause
+from 角平分线 import obtuse_bisector_intersection,  obtuse_angle_index
 min_num=2000
 def load_mesh(filename):
     mesh = o3d.io.read_triangle_mesh(filename)
@@ -45,6 +46,7 @@ def compute_simplification_ratio(original_mesh, simplified_mesh):
     original_face_count = len(original_mesh.triangles)
     simplified_face_count = len(simplified_mesh.triangles)
     reduction_ratio = 1 - (simplified_face_count / original_face_count)
+    # reduction_ratio = simplified_face_count / original_face_count
     return reduction_ratio + 0.1
 
 
@@ -61,6 +63,7 @@ def compute_loss(mesh0, mesh1, weight_similarity=0.8, weight_reduction=0.2):
     loss = weight_similarity * similarity_loss + weight_reduction * reduction_ratio
     # loss =weight_reduction * reduction_ratio
     return loss
+
 # 定义一个函数，用于计算三角形三个角的最小角度
 def minimum_angle(vertices):
     edges = [np.linalg.norm(vertices[i] - vertices[(i + 1) % 3]) for i in range(3)]
@@ -69,7 +72,7 @@ def minimum_angle(vertices):
         a, b, c = edges[i], edges[(i + 1) % 3], edges[(i + 2) % 3]
         angle = math.acos((b ** 2 + c ** 2 - a ** 2) / (2 * b * c))
         angles.append(math.degrees(angle))
-    return min(angles)
+    return min(angles),max(angles)
 
 
 def split(mesh, min_allowed_angle):
@@ -81,12 +84,26 @@ def split(mesh, min_allowed_angle):
 
     new_faces = []
 
+
     for face in mesh1.faces:
 
         tri_vertices = mesh1.vertices[face]
-        min_angle = minimum_angle(tri_vertices)
+        min_angle ,max_angle= minimum_angle(tri_vertices)
+        if max_angle>150:
+            index = obtuse_angle_index(tri_vertices)
 
-        if min_angle < min_allowed_angle:
+
+            i1, i2 = (index + 1) % 3, (index + 2) % 3
+            new_point = obtuse_bisector_intersection(tri_vertices)
+
+
+            new_point_idx = len(mesh1.vertices)
+            mesh1.vertices = np.vstack([mesh1.vertices, new_point])
+
+
+            new_faces.append([face[i1], face[index], new_point_idx])
+            new_faces.append([face[i2], face[index], new_point_idx])
+        elif min_angle < min_allowed_angle and 90<max_angle<150:
             # 如果最小角度小于允许的阈值，则将三角形分裂为两个更规则的三角形
             # 选择最长的边，将其分裂
             edges = [np.linalg.norm(tri_vertices[i] - tri_vertices[(i + 1) % 3]) for i in range(3)]
@@ -104,6 +121,7 @@ def split(mesh, min_allowed_angle):
             i3 = (longest_edge_idx + 2) % 3
             new_faces.append([face[i1], face[i3], new_point_idx])
             new_faces.append([face[i2], face[i3], new_point_idx])
+
 
         else:
             # 保持原来的三角形
@@ -193,11 +211,12 @@ def is_feasible(X, num):
 
 
 class WOA_DE:
-    def __init__(self, n_agents, max_iter, dim, lb,even_ub, odd_ub, obj_func, mut, crossp, mesh):
+    def __init__(self, n_agents, max_iter, dim, even_lb, even_ub,odd_lb,odd_ub, obj_func, mut, crossp, mesh):
         self.n_agents = n_agents
         self.max_iter = max_iter
         self.dim = dim
-        self.lb = lb
+        self.even_lb = even_lb
+        self.odd_lb = odd_lb
         # self.ub = ub
         self.obj_func = obj_func
         self.mut = mut
@@ -211,13 +230,15 @@ class WOA_DE:
         self.even_ub = even_ub
         self.odd_ub = odd_ub
         self.upper_bounds = np.where(indices % 2 == 0, self.even_ub, self.odd_ub)
-        self.agents = np.random.uniform(self.lb,self.upper_bounds,(n_agents, dim))
+        self.lower_bounds = np.where(indices % 2 == 0, self.even_lb, self.odd_lb)
+        self.agents = np.random.uniform(self.lower_bounds,self.upper_bounds,(n_agents, dim))
 
     def apply_bounds(self, agents):
 
         indices = np.arange(self.dim)
         upper_bounds = np.where(indices % 2 == 0, self.even_ub, self.odd_ub)
-        return np.clip(agents, self.lb, upper_bounds)
+        lower_bounds = np.where(indices % 2 == 0, self.even_lb, self.odd_lb)
+        return np.clip(agents, lower_bounds, upper_bounds)
 
     def optimize(self):
 
@@ -248,7 +269,7 @@ class WOA_DE:
                     else:
                         idxs = [idx for idx in range(self.n_agents) if idx != i]
                         x, y, z = self.agents[np.random.choice(idxs, 3, replace=False)]
-                        mutant = np.clip(x + self.mut * (y - z), self.lb, self.upper_bounds)
+                        mutant = np.clip(x + self.mut * (y - z), self.lower_bounds, self.upper_bounds)
                         cross_points = np.random.rand(self.dim) < self.crossp
                         if not np.any(cross_points):
                             cross_points[np.random.randint(0, self.dim)] = True
@@ -268,7 +289,7 @@ class WOA_DE:
                         self.best_agent = trial
 
 
-            self.agents = np.clip(self.agents, self.lb, self.upper_bounds)
+            self.agents = np.clip(self.agents, self.lower_bounds, self.upper_bounds)
             print("best_agents",self.best_agent)
             tuili(self.best_agent, mesh, t)
 
@@ -280,15 +301,16 @@ class WOA_DE:
 n_agents = 20
 max_iter = 50
 dim = 8
-lb = 0
-even_ub = 5
+even_lb = 0
+even_ub = 10
+odd_lb=0
 odd_ub=400
 mut = 0.8
 crossp = 0.7
 mesh = tr.load('input.obj', force='mesh')
 # loss=compute_loss('input.obj','input.obj')
 # print("loss:",loss)
-woa_de = WOA_DE(n_agents, max_iter, dim, lb, even_ub,odd_ub, calculate_similarity, mut, crossp, mesh)
+woa_de = WOA_DE(n_agents, max_iter, dim, even_lb, even_ub,odd_lb,odd_ub, calculate_similarity, mut, crossp, mesh)
 best_agent, best_score = woa_de.optimize()
 print("最优解: ", best_agent)
 print("最优目标函数值: ", best_score)
