@@ -5,64 +5,10 @@ import pyfqmr
 import open3d as o3d
 import openmesh as om
 from fastqem import simplify_mesh_gause
+from loss.loss import computeLoss
 min_num=2000
 
-def load_mesh(filename):
-    mesh = o3d.io.read_triangle_mesh(filename)
-    return mesh
 
-def convert_trimesh_to_open3d(trimesh_obj):
-    # 提取顶点和面
-    vertices = trimesh_obj.vertices
-    faces = trimesh_obj.faces
-
-    # 创建Open3D的TriangleMesh
-    open3d_mesh = o3d.geometry.TriangleMesh()
-    open3d_mesh.vertices = o3d.utility.Vector3dVector(vertices)
-    open3d_mesh.triangles = o3d.utility.Vector3iVector(faces)
-    return open3d_mesh
-def mesh_to_point_cloud(mesh, num_points=10000):
-    if len(mesh.vertices) > 0:
-        pcd = mesh.sample_points_uniformly(number_of_points=num_points)
-    else:
-        raise ValueError("Mesh has no vertices.")
-    return pcd
-
-
-def compute_hausdorff_distance(pcd1, pcd2):
-    distance1 = pcd1.compute_point_cloud_distance(pcd2)
-    distance2 = pcd2.compute_point_cloud_distance(pcd1)
-    max_distance = max(np.max(distance1), np.max(distance2))
-    return max_distance
-
-
-def compute_mse_distance(pcd1, pcd2):
-    distance1 = pcd1.compute_point_cloud_distance(pcd2)
-    distance2 = pcd2.compute_point_cloud_distance(pcd1)
-    mse = (np.mean(np.square(distance1)) + np.mean(np.square(distance2))) / 2
-    return mse
-
-
-def compute_simplification_ratio(original_mesh, simplified_mesh):
-    original_face_count = len(original_mesh.triangles)
-    simplified_face_count = len(simplified_mesh.triangles)
-    reduction_ratio = 1 - (simplified_face_count / original_face_count)
-    return reduction_ratio + 0.1
-
-
-def compute_loss(mesh0,mesh1, weight_similarity=0.8, weight_reduction=0.2):
-    original_mesh = convert_trimesh_to_open3d(mesh0)
-    simplified_mesh = convert_trimesh_to_open3d(mesh1)
-
-    original_pcd = mesh_to_point_cloud(original_mesh)
-    simplified_pcd = mesh_to_point_cloud(simplified_mesh)
-
-    similarity_loss = compute_mse_distance(original_pcd, simplified_pcd)
-    reduction_ratio = compute_simplification_ratio(original_mesh, simplified_mesh)
-
-    loss = weight_similarity * similarity_loss + weight_reduction * reduction_ratio
-    # loss =weight_reduction * reduction_ratio
-    return loss
 # 定义一个函数，用于计算三角形三个角的最小角度
 def minimum_angle(vertices):
     edges = [np.linalg.norm(vertices[i] - vertices[(i + 1) % 3]) for i in range(3)]
@@ -174,7 +120,7 @@ def calculate_similarity(X, mesh):
     mesh_copy=tr.load('input.obj', force='mesh')
 
 
-    return compute_loss(mesh,mesh_copy)
+    return computeLoss(mesh_copy,mesh)
 def tuili(X,mesh,t):
     mesh_copy = mesh
 
@@ -241,7 +187,13 @@ class WOA_DE:
             fitness = self.obj_func(self.agents[i], self.mesh)
 
             # 更新最优解
-            if self.best_agent is None or (fitness < self.best_score and is_feasible(self.agents[i], len(self.mesh.faces))):
+            if self.best_agent is None or (fitness < self.best_score):
+            #if self.best_agent is None or (fitness < self.best_score and is_feasible(self.agents[i], len(self.mesh.faces))):
+                print("aaaaaa")
+                print("aaaaaa")
+                print("aaaaaa")
+                print("aaaaaa")
+                print("aaaaaa")
                 self.best_score = fitness
                 self.best_agent = self.agents[i].copy()
 
@@ -276,11 +228,14 @@ class WOA_DE:
                     distance_to_best = abs(self.best_agent - self.agents[i])
                     trial = distance_to_best * np.exp(b * l) * np.cos(2 * np.pi * l) + self.best_agent
 
-                if is_feasible(trial, len(self.mesh.faces)) and self.obj_func(trial, self.mesh) > self.obj_func(self.agents[i], self.mesh):
+                if self.obj_func(trial, self.mesh) <= self.obj_func(self.agents[i], self.mesh):
                     self.agents[i] = trial
-                    if self.obj_func(trial, self.mesh) > self.best_score:
+
+                    if self.obj_func(trial, self.mesh) <= self.best_score:
+
                         self.best_score = self.obj_func(trial, self.mesh)
                         self.best_agent = trial
+
 
 
             # 限制鲸鱼位置在搜索空间范围内
@@ -294,16 +249,16 @@ class WOA_DE:
 
 
 # 参数设置
-n_agents = 10  # 鲸鱼个体数量
+n_agents = 5  # 鲸鱼个体数量
 max_iter = 50  # 最大迭代次数
 dim = 9  # 搜索空间维度
 lb = 0  # 下界
-one_ub = 3
+one_ub =10
 two_ub=500# 上界
 three_ub=500
-mut = 0.8
+mut = 1.2
 crossp = 0.7
-mesh = tr.load('input (1).obj', force='mesh')
+mesh = tr.load('input.obj', force='mesh')
 # loss=compute_loss('input.obj','input.obj')
 # print("loss:",loss)
 #mesh = remove_duplicate_vertices(mesh)
